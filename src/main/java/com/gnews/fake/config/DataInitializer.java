@@ -2,7 +2,9 @@ package com.gnews.fake.config;
 
 import com.gnews.fake.domain.Article;
 import com.gnews.fake.domain.Source;
+import com.gnews.fake.domain.User;
 import com.gnews.fake.repository.ArticleRepository;
+import com.gnews.fake.repository.UserRepository;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
 
@@ -16,10 +18,12 @@ import java.util.UUID;
 public class DataInitializer implements CommandLineRunner {
 
         private final ArticleRepository articleRepository;
+        private final UserRepository userRepository;
         private final Random random = new Random();
 
-        public DataInitializer(ArticleRepository articleRepository) {
+        public DataInitializer(ArticleRepository articleRepository, UserRepository userRepository) {
                 this.articleRepository = articleRepository;
+                this.userRepository = userRepository;
         }
 
         @Override
@@ -121,5 +125,19 @@ public class DataInitializer implements CommandLineRunner {
 
                 articleRepository.saveAll(articles);
                 System.out.println("Initialized " + articles.size() + " fake articles.");
+
+                // Initialize vulnerable test users with plaintext passwords (SECURITY VULNERABILITY!)
+                List<User> users = new ArrayList<>();
+
+                // WARNING: Storing plaintext passwords - critical security vulnerability!
+                users.add(new User("admin", "admin123", "admin@example.com", "ADMIN", true));
+                users.add(new User("john", "password", "john@example.com", "USER", true));
+                users.add(new User("sarah", "qwerty123", "sarah@example.com", "USER", true));
+                users.add(new User("bob", "123456", "bob@example.com", "USER", true));
+                users.add(new User("alice", "letmein", "alice@example.com", "EDITOR", true));
+                users.add(new User("root", "toor", "root@example.com", "SUPERADMIN", true));
+
+                userRepository.saveAll(users);
+                System.out.println("Initialized " + users.size() + " test users with PLAINTEXT passwords (VULNERABLE!).");
         }
 }
