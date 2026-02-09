@@ -47,4 +47,3 @@ Os arquivos utilizados para gerar e testar este projeto foram movidos para a pas
 *   Spring Boot
 *   Maven
 *   Antigravity (AI Agent)
-  
