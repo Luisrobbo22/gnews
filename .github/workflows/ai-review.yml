@@ -10,127 +10,23 @@ jobs:
     permissions:
       contents: read
       pull-requests: write # Necessário para comentar no PR
-
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Generate diff
-        shell: bash
-        run: |
-          set -euo pipefail
-          git fetch --no-tags origin "+refs/pull/${{ github.event.pull_request.number }}/merge:refs/remotes/origin/pr/${{ github.event.pull_request.number }}/merge"
-          git diff --unified=0 "origin/pr/${{ github.event.pull_request.number }}/merge^!" > pr.diff || true
-
       - name: AI Reviewer (Gemini)
         shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GOOGLE_AI_STUDIO_API_KEY: ${{ secrets.GOOGLE_AI_STUDIO_API_KEY }}
+          GOOGLE_AI_STUDIO_API_KEY: ${{ secrets.AI_API_KEY }}
           GEMINI_MODEL: gemini-2.0-flash
           LANGUAGE: Portuguese
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          set -euo pipefail
-
-          if [[ -z "${GOOGLE_AI_STUDIO_API_KEY:-}" ]]; then
-            echo "Missing secret GOOGLE_AI_STUDIO_API_KEY" >&2
-            exit 1
-          fi
-
-          DIFF_CONTENT=$(python3 - <<'PY'
-import pathlib
-p = pathlib.Path('pr.diff')
-print(p.read_text(encoding='utf-8', errors='replace') if p.exists() else '')
-PY
-          )
-
-          # Trim to reduce token/size issues (keep last ~120k chars)
-          MAX_CHARS=120000
-          if (( ${#DIFF_CONTENT} > MAX_CHARS )); then
-            DIFF_CONTENT="${DIFF_CONTENT: -MAX_CHARS}"
-          fi
-
-          PROMPT=$(cat <<'EOF'
-Aja como um Engenheiro de Segurança Sênior (DevSecOps).
-
-Analise o DIFF deste Pull Request buscando:
-1. Vulnerabilidades OWASP Top 10 (especialmente SQL Injection e Insecure Deserialization).
-2. Code Smells e complexidade ciclomática desnecessária.
-3. Aderência às melhores práticas de Java 25 e Spring Boot 3.4.
-4. Responda com comentários técnicos e construtivos diretamente nas linhas do código afetado (cite arquivos/linhas do diff quando possível).
-EOF
-          )
-
-          REQUEST_JSON=$(python3 - <<PY
-import json
-prompt = ${PROMPT@Q}
-diff = ${DIFF_CONTENT@Q}
-lang = "${LANGUAGE}"
-content = f"Idioma de resposta: {lang}\n\n{prompt}\n\n---\nDIFF (pode estar truncado):\n{diff}"
-print(json.dumps({
-  "contents": [{"parts": [{"text": content}]}],
-  "generationConfig": {
-    "temperature": 0.2,
-    "maxOutputTokens": 2048
-  }
-}))
-PY
-          )
-
-          RESPONSE=$(curl -sS -X POST \
-            -H 'Content-Type: application/json' \
-            "https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GOOGLE_AI_STUDIO_API_KEY}" \
-            -d "$REQUEST_JSON")
-
-          REVIEW_TEXT=$(python3 - <<'PY'
-import json, sys
-raw = sys.stdin.read()
-try:
-    data = json.loads(raw)
-except json.JSONDecodeError:
-    print(raw)
-    raise
-
-candidates = data.get('candidates') or []
-if not candidates:
-    print('(Sem resposta do modelo)\n\nRaw:\n' + raw)
-    sys.exit(0)
-
-parts = (((candidates[0].get('content') or {}).get('parts')) or [])
-text = ''.join([p.get('text','') for p in parts if isinstance(p, dict)])
-print(text if text.strip() else '(Resposta vazia do modelo)')
-PY
-          <<< "$RESPONSE")
-
-          BODY=$(cat <<EOF
-## Revisão automática (Gemini)
-
-${REVIEW_TEXT}
-
----
-_Obs.: revisão gerada automaticamente a partir do diff do PR._
-EOF
-          )
-
-          python3 - <<'PY'
-import os, json, urllib.request
-
-token = os.environ['GITHUB_TOKEN']
-repo = os.environ['GITHUB_REPOSITORY']
-pr = os.environ['PR_NUMBER']
-body = os.environ['BODY']
-
-url = f"https://api.github.com/repos/{repo}/issues/{pr}/comments"
-req = urllib.request.Request(url, method='POST')
-req.add_header('Authorization', f'Bearer {token}')
-req.add_header('Accept', 'application/vnd.github+json')
-req.add_header('Content-Type', 'application/json')
-
-payload = json.dumps({'body': body}).encode('utf-8')
-with urllib.request.urlopen(req, data=payload) as resp:
-    print(resp.read().decode('utf-8'))
-PY
+          PROMPT: |
+            Aja como um Engenheiro de Segurança Sênior (DevSecOps). 
+            Analise o DIFF deste Pull Request buscando:
+            1. Vulnerabilidades OWASP Top 10 (especialmente SQL Injection e Insecure Deserialization).
+            2. Code Smells e complexidade ciclomática desnecessária.
+            3. Aderência às melhores práticas de Java 25 e Spring Boot 3.4.
+            4. Responda com comentários técnicos e construtivos diretamente nas linhas do código afetado.
