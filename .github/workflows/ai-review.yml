@@ -13,102 +13,19 @@ jobs:
 
     steps:
       - name: Checkout Repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: AI Reviewer (Gemini)
-        shell: bash
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GOOGLE_AI_STUDIO_API_KEY: ${{ secrets.AI_API_KEY }}
-          GEMINI_MODEL: gemini-2.0-flash
-          LANGUAGE: pt-BR
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          set -euo pipefail
-
-          if [[ -z "${GOOGLE_AI_STUDIO_API_KEY:-}" ]]; then
-            echo "Missing secret GOOGLE_AI_STUDIO_API_KEY" >&2
-            exit 1
-          fi
-
-          # Diff do PR (GitHub fornece refs/pull/<n>/merge)
-          git fetch --no-tags origin "+refs/pull/${PR_NUMBER}/merge:refs/remotes/origin/pr/${PR_NUMBER}/merge"
-          git diff --unified=0 "origin/pr/${PR_NUMBER}/merge^!" > pr.diff || true
-
-          python3 - <<'PY'
-          import json
-          import os
-          import pathlib
-          import urllib.request
-
-          API_KEY = os.environ["GOOGLE_AI_STUDIO_API_KEY"]
-          MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.0-flash")
-          LANG = os.environ.get("LANGUAGE", "pt-BR")
-          REPO = os.environ["GITHUB_REPOSITORY"]
-          PR_NUMBER = os.environ["PR_NUMBER"]
-          GITHUB_TOKEN = os.environ["GITHUB_TOKEN"]
-
-          diff_path = pathlib.Path("pr.diff")
-          diff = diff_path.read_text(encoding="utf-8", errors="replace") if diff_path.exists() else ""
-          max_chars = 120000
-          if len(diff) > max_chars:
-              diff = diff[-max_chars:]
-
-          prompt = (
-              "Aja como um Engenheiro de Segurança Sênior (DevSecOps).\n"
-              "Analise o DIFF deste Pull Request buscando:\n"
-              "1. Vulnerabilidades OWASP Top 10 (especialmente SQL Injection e Insecure Deserialization).\n"
-              "2. Code Smells e complexidade ciclomática desnecessária.\n"
-              "3. Aderência às melhores práticas de Java 25 e Spring Boot 3.4.\n"
-              "4. Responda com comentários técnicos e construtivos diretamente nas linhas do código afetado.\n"
-          )
-
-          content = f"Idioma de resposta: {LANG}\n\n{prompt}\n\n---\nDIFF (pode estar truncado):\n{diff}"
-
-          request_json = json.dumps({
-              "contents": [{"parts": [{"text": content}]}],
-              "generationConfig": {"temperature": 0.2, "maxOutputTokens": 2048},
-          }).encode("utf-8")
-
-          url = (
-              f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent"
-              f"?key={API_KEY}"
-          )
-
-          req = urllib.request.Request(url, method="POST")
-          req.add_header("Content-Type", "application/json")
-
-          with urllib.request.urlopen(req, data=request_json) as resp:
-              response_raw = resp.read().decode("utf-8", errors="replace")
-
-          data = json.loads(response_raw)
-          candidates = data.get("candidates") or []
-          parts = (((candidates[0].get("content") or {}).get("parts")) or []) if candidates else []
-          review_text = "".join([p.get("text", "") for p in parts if isinstance(p, dict)]).strip()
-          if not review_text:
-              review_text = "(Sem resposta do modelo)"
-
-          body = "\n".join(
-              [
-                  "## Revisão automática (Gemini)",
-                  "",
-                  review_text,
-                  "",
-                  "---",
-                  "_Obs.: revisão gerada automaticamente a partir do diff do PR._",
-              ]
-          )
-
-          comment_url = f"https://api.github.com/repos/{REPO}/issues/{PR_NUMBER}/comments"
-          comment_req = urllib.request.Request(comment_url, method="POST")
-          comment_req.add_header("Authorization", f"Bearer {GITHUB_TOKEN}")
-          comment_req.add_header("Accept", "application/vnd.github+json")
-          comment_req.add_header("Content-Type", "application/json")
-
-          payload = json.dumps({"body": body}).encode("utf-8")
-          with urllib.request.urlopen(comment_req, data=payload) as resp:
-              print(resp.read().decode("utf-8", errors="replace"))
-          PY
+        uses: sshnaidm/gemini-code-review-action@v1
+        with:
+          gemini-key: ${{ secrets.AI_API_KEY }}
+          model: gemini-2.5-flash
+          prompt: |
+            Aja como um Engenheiro de Segurança Sênior (DevSecOps).
+            Analise o DIFF deste Pull Request buscando:
+            1. Vulnerabilidades OWASP Top 10 (especialmente SQL Injection e Insecure Deserialization).
+            2. Code Smells e complexidade ciclomática desnecessária.
+            3. Aderência às melhores práticas de Java 25 e Spring Boot 3.4.
+            4. Responda com comentários técnicos e construtivos diretamente nas linhas do código afetado.
