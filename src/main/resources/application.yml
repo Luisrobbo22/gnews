@@ -2,8 +2,31 @@ spring:
   application:
     name: gnews-mock-api
 
+  # H2 Database Configuration (VULNERABLE SETUP!)
+  datasource:
+    url: jdbc:h2:mem:testdb
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: password  # VULNERABILITY: Hardcoded password
+
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true  # VULNERABILITY: Exposing SQL queries in logs
+
+  h2:
+    console:
+      enabled: true  # VULNERABILITY: H2 Console exposed in production
+      path: /h2-console
+      settings:
+        web-allow-others: true  # VULNERABILITY: Allows remote access to H2 console
+
 server:
   port: 8080
+  error:
+    include-message: always  # VULNERABILITY: Exposes detailed error messages
+    include-stacktrace: always  # VULNERABILITY: Exposes stack traces
 
 gnews:
   api-key: "test-api-key"
